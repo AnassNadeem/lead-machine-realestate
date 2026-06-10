@@ -526,23 +526,28 @@ async function loadData() {
 const $ = (id) => document.getElementById(id);
 const scoreRank = { hot: 3, warm: 2, cold: 1 };
 
-// Parse a budget string like "$1.8M - $2.2M", "$900K - $1.1M", "Unsure"
-// into a rough midpoint dollar value for pipeline estimation.
+// Parse a budget string into a rough numeric value for pipeline estimation.
+// Handles the shapes that show up in the exports:
+//   "$800k", "$4.5 Million", "£450,000", "£825,000", "$1.8M - $2.2M",
+//   "7850000", and free text like "Not sure" / "Not sure yet" (→ 0).
+// Note: currency symbols are ignored — a mixed $/£ dataset is summed as one
+// number, so the KPI is a rough order-of-magnitude estimate, not FX-accurate.
 function budgetMidpoint(b) {
   if (!b) return 0;
+  const s = String(b).toLowerCase();
   const nums = [];
-  const re = /\$?\s*([\d.]+)\s*([MmKk])?/g;
+  // number (with optional thousands commas / decimal) + optional k|m|million unit
+  const re = /([\d][\d,]*(?:\.\d+)?)\s*(million|mil|m|k)?/g;
   let m;
-  while ((m = re.exec(b)) !== null) {
-    let n = parseFloat(m[1]);
-    if (isNaN(n)) continue;
-    const unit = (m[2] || '').toLowerCase();
-    if (unit === 'm') n *= 1_000_000;
-    else if (unit === 'k') n *= 1_000;
-    else if (n < 1000) n *= 1_000_000; // bare small number → assume millions
+  while ((m = re.exec(s)) !== null) {
+    let n = parseFloat(m[1].replace(/,/g, ''));
+    if (!isFinite(n)) continue;
+    const unit = m[2] || '';
+    if (unit === 'k') n *= 1_000;
+    else if (unit) n *= 1_000_000; // m / mil / million
     nums.push(n);
   }
-  if (!nums.length) return 0;
+  if (!nums.length) return 0; // "Not sure", "Unsure", empty → no value
   return nums.reduce((a, c) => a + c, 0) / nums.length;
 }
 
