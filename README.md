@@ -1,136 +1,264 @@
-# lead-machine-realestate
+# Lead Machine — Real-Estate Lead Qualification & Booking Automation
 
-A real-estate **lead-qualification + booking automation** demo. A prospect fills
-out a form → an LLM scores the lead → hot leads get a booking link, all leads
-get logged and emailed a tailored follow-up.
+An end-to-end demo that turns a raw web-form enquiry into a **scored, logged,
+and followed-up** real-estate lead — automatically.
 
-The automation spine is **n8n**, built by hand in the n8n UI. This repo holds the
-code-shaped parts that n8n consumes. See [`CLAUDE.md`](./CLAUDE.md) for the full
-architecture.
+A prospect fills out a form → **Claude** scores the lead (hot / warm / cold) →
+the lead is written to **Airtable** → an **n8n** Switch routes it → the prospect
+gets a tailored follow-up email (hot leads include a **Cal.com** booking link) →
+the operator watches everything land in a polished **lead-intelligence
+dashboard**.
 
-## Stack
+### 🔗 Live dashboard demo → **https://lead-machine-demo.netlify.app/**
 
-- **n8n** — orchestration (UI-built workflow)
-- **Claude API** `claude-haiku-4-5-20251001` — lead scoring → JSON
-- **Airtable** — leads database
-- **Cal.com** — 15-min discovery-call booking
-- **Gmail SMTP** — outbound follow-up emails
-
-## Repo contents
-
-| File                       | What it is                                           |
-| -------------------------- | ---------------------------------------------------- |
-| `CLAUDE.md`                | Architecture + stack reference                       |
-| `qualification-prompt.md`  | The lead-scoring prompt for the Claude node          |
-| `landing/index.html`       | Lead-capture form _(coming later)_                   |
-| `scripts/seed-leads.mjs`   | Fake-lead seeder for testing _(coming later)_        |
+![Lead Machine dashboard](resources/dashboard_preview.png)
 
 ---
 
-## ⚠️ Before anything: secrets
+## What's in the box
 
-`.env.txt` holds a **live Airtable token** and a **Gmail app password**. Keep
-them out of git. If you haven't already, add a `.gitignore`:
-
-```
-.env
-.env.txt
-node_modules/
-```
-
-Real credentials belong in **n8n's credential store**, not in committed files.
+| Piece | What it does | Where |
+| ----- | ------------ | ----- |
+| **Lead-intelligence dashboard** | Dark, data-dense single-file UI: KPI cards, distribution donut, timeline chart, sortable/filterable leads table, slide-over lead detail with copyable AI follow-up | [`dashboard/`](./dashboard) |
+| **n8n workflow** | The automation spine — form trigger → Claude scoring → Airtable → Switch → email. Built by hand in the n8n UI | preview below |
+| **Qualification prompt** | The system prompt Claude uses to score a lead and return strict JSON | [`qualification-prompt.md`](./qualification-prompt.md) |
+| **Parse-score Code node** | n8n JavaScript that strips fences, parses Claude's JSON, and degrades gracefully on bad output | [`n8n/parse-score.code-node.js`](./n8n/parse-score.code-node.js) |
 
 ---
 
-## Manual n8n setup checklist
+## Architecture
 
-Build this workflow in the n8n UI. Check items off as you go.
+```
+                    Lead capture form (browser)
+                              │  HTTP POST (JSON)
+                              ▼
+                   ┌────────────────────────────┐
+                   │        n8n  (spine)         │
+   Webhook ────────►  1. On form submission      │
+                   │  2. Edit Fields (normalize) │
+                   │  3. HTTP Request ───────────┼──► Claude API
+                   │       (qualification prompt)│    claude-haiku-4-5-20251001
+                   │  4. Code: parse score JSON ─┤    → {score, score_number,
+                   │  5. Create record ──────────┼──► Airtable (Leads table)
+                   │  6. Switch on score         │
+                   │       hot ─┐                │
+                   │      warm ─┤                │
+                   │      cold ─┘                │
+                   │  7. Send email ─────────────┼──► Gmail SMTP
+                   │     (hot → + Cal.com link)  │
+                   └────────────────────────────┘
+                              │
+                              ▼
+                      Cal.com booking          Airtable export ──► dashboard/leads.json
+                  (15-min discovery call)               │
+                                                         ▼
+                                            Lead-intelligence dashboard
+```
 
-### 1. Accounts & credentials
+### Data flow
 
-- [ ] **Airtable**: create a base with a **Leads** table (see schema below).
-- [ ] **Airtable**: add the Personal Access Token to n8n as an Airtable credential.
-- [ ] **Claude / Anthropic**: get an API key; add it to n8n as an HTTP/Anthropic credential.
-- [ ] **Cal.com**: confirm the discovery-call booking link is live.
-- [ ] **Gmail**: enable 2FA and create an **app password**; add Gmail SMTP credentials to n8n.
+1. **Capture** — a lead-capture form `POST`s JSON (name, email, phone, intent,
+   budget, preferred area, timeline) to the n8n production webhook.
+2. **Qualify** — n8n sends the payload to the Claude API with the system prompt
+   in [`qualification-prompt.md`](./qualification-prompt.md). Claude returns
+   **only** a JSON object (schema below). Model: **`claude-haiku-4-5-20251001`**
+   — fast and cheap, the right tier for short structured classification.
+3. **Parse** — the [`parse-score`](./n8n/parse-score.code-node.js) Code node
+   strips any ```` ```json ```` fences, parses the object, and on failure
+   defaults `score` to `warm` and flags the lead for manual review instead of
+   dropping it.
+4. **Persist** — n8n writes the raw lead plus the parsed score fields into the
+   Airtable **Leads** table.
+5. **Route** — a Switch node branches on `score`: **hot** → booking email with
+   the Cal.com link; **warm** → nurture email; **cold** → low-touch / log only.
+6. **Notify** — Gmail SMTP sends the email, using `followup_message` from
+   Claude as the body.
+7. **Visualize** — the Airtable Leads table is exported to
+   [`dashboard/leads.json`](./dashboard/leads.json) and the dashboard renders it.
 
-### 2. Airtable — Leads table fields
+---
 
-- [ ] `name` (single line text)
-- [ ] `email` (email)
-- [ ] `phone` (phone)
-- [ ] `intent` (single select: buy / sell)
-- [ ] `budget` (single line text)
-- [ ] `timeline` (single line text)
-- [ ] `notes` (long text)
-- [ ] `score` (single select: hot / warm / cold)
-- [ ] `score_number` (number, 0–100)
-- [ ] `summary` (long text)
-- [ ] `reasons` (long text)
-- [ ] `suggested_action` (long text)
-- [ ] `followup_message` (long text)
-- [ ] `created_at` (created time)
+## The dashboard
 
-### 3. n8n workflow nodes
+A single, self-contained `dashboard/index.html` — vanilla HTML/CSS/JS, no build
+step, no framework (Chart.js via CDN is the only dependency).
 
-- [ ] **Webhook (trigger)** — `POST`, production URL. This is the URL the landing
-      form submits to. Copy it; you'll wire `landing/index.html` to it later.
-- [ ] **(Optional) Set/Edit Fields** — normalize the incoming payload into the
-      lead fields.
-- [ ] **Claude (HTTP Request or Anthropic node)** —
-  - model: `claude-haiku-4-5-20251001`
-  - system prompt: paste from [`qualification-prompt.md`](./qualification-prompt.md)
-  - user message: the lead JSON
-  - `max_tokens`: ~600
-- [ ] **Parse JSON** — parse the model's response into fields. On parse failure,
-      default `score` to `warm` and flag for manual review (don't drop the lead).
-- [ ] **Airtable (Create record)** — map lead fields + all score fields into the
-      Leads table.
-- [ ] **Switch** — branch on `score`:
-  - [ ] **hot** → Gmail: send `followup_message` **+ the Cal.com booking link**; mark for immediate follow-up.
-  - [ ] **warm** → Gmail: send `followup_message`; tag for nurture sequence.
-  - [ ] **cold** → log only (or low-touch email); no booking push.
-- [ ] **Gmail (Send)** — use `followup_message` as the body; tone follows
-      `suggested_action`.
+**Features**
 
-### 4. Test the pipeline
+- **KPI cards** — Total Leads, Hot Leads (% of total), Avg Score, and an
+  estimated pipeline value summed from the lead budgets (count-up on load).
+- **Charts** — a lead-distribution donut (hot/warm/cold) and a horizontal
+  "leads by timeline" bar chart.
+- **Leads table** — colored score pills, a thin confidence progress bar,
+  intent / budget / timeline / area, and the AI summary. Click any header to
+  sort; defaults to score descending so hot leads sit on top.
+- **Search + filter chips** — live filtering by All / Hot / Warm / Cold and a
+  free-text search over name, email, and area.
+- **Slide-over detail** — click a row for the full lead: every field, the AI
+  summary, the suggested action, and the AI-drafted follow-up in a copyable
+  block.
+- **Polish** — dark Linear/Vercel-style theme, responsive layout, soft
+  fade-ins, and a graceful empty state when there's no data.
 
-- [ ] Activate the workflow; confirm the webhook is live.
-- [ ] Send a test lead (later: `node scripts/seed-leads.mjs`, or a manual `curl`/Postman POST).
-- [ ] Verify: a row lands in Airtable with score fields populated.
-- [ ] Verify: a hot test lead receives an email containing the Cal.com link.
-- [ ] Verify: warm/cold leads get the right (non-booking) email.
+### Run it locally
 
-### 5. Go live
+The page `fetch`es `leads.json`, and browsers block `fetch()` over `file://`, so
+serve the folder over HTTP (don't just double-click the file):
 
-- [ ] Wire `landing/index.html` to the production webhook URL.
-- [ ] Submit a real form entry end-to-end and confirm the full flow.
+```bash
+cd dashboard
+python -m http.server 8000      # or:  npx serve -l 8000
+```
+
+Then open **http://localhost:8000**.
+
+### Point it at real data
+
+`leads.json` is an array of lead objects. To use a live export, replace
+`leads.json` or change the `DATA_URL` constant in the script's commented
+data-loading section (e.g. point it at an Airtable/n8n endpoint that returns the
+same shape).
+
+The included `dashboard/Leads-Grid view.csv` is a sample Airtable export; the
+dashboard's data is generated from it. The converter maps Airtable's capitalized
+/ space-padded headers (`Score ` → `score`, `Score Number` → `score_number`,
+etc.), skips empty rows and rows whose summary contains `PARSE FAILED` or
+`Could not parse`, and leaves `followup_message` blank when the export has no
+such column.
+
+> **Budgets & currency:** the budget parser handles `$800k`, `$4.5 Million`,
+> `£450,000`, ranges like `$1.8M - $2.2M`, and free text such as `Not sure`
+> (→ 0). The sample data mixes `$` and `£`, so the pipeline KPI is a rough
+> order-of-magnitude estimate, not FX-accurate.
 
 ---
 
 ## Lead-score JSON contract
 
-The Claude node returns **only** this object (full rubric in
-[`qualification-prompt.md`](./qualification-prompt.md)):
+The Claude node returns **only** this object — no prose, no markdown fences
+(full rubric in [`qualification-prompt.md`](./qualification-prompt.md)):
 
 ```json
 {
   "score": "hot | warm | cold",
   "score_number": 0,
-  "summary": "...",
-  "reasons": ["..."],
-  "suggested_action": "...",
-  "followup_message": "..."
+  "summary": "one-line summary of the lead",
+  "reasons": ["why this score", "..."],
+  "suggested_action": "what the operator/automation should do next",
+  "followup_message": "ready-to-send email body for this lead"
 }
 ```
 
-- **hot** — buy/sell within 3 months + budget + reachable
-- **warm** — 3–6 months, or exploring
-- **cold** — browsing, no budget, or 6+ months
+| Band | Meaning | `score_number` |
+| ---- | ------- | -------------- |
+| **hot**  | buy/sell within **3 months**, has a budget, reachable | 75–100 |
+| **warm** | **3–6 months** horizon, or exploring / not fully committed | 40–74 |
+| **cold** | just browsing, no budget, or **6+ months** out | 0–39 |
 
 ---
 
-## Coming later
+## The n8n workflow
 
-- `landing/index.html` — polished lead-capture form posting to the n8n webhook.
-- `scripts/seed-leads.mjs` — generates fake leads to exercise the full pipeline.
+Built by hand in the n8n UI (this repo holds only the code-shaped parts n8n
+consumes). The flow: **On form submission → Edit Fields → HTTP Request (Claude)
+→ Code (parse score) → Create record (Airtable) → Switch → Send email(s)**.
+
+![n8n workflow](resources/n8n_preview.png)
+
+Scored leads land in the Airtable **Leads** table:
+
+![Airtable Leads table](resources/airtable_preview.png)
+
+### Manual setup checklist
+
+**1. Accounts & credentials**
+
+- [ ] **Airtable** — base with a **Leads** table (fields below); add the
+      Personal Access Token to n8n.
+- [ ] **Anthropic** — API key; add to n8n as an HTTP/Anthropic credential.
+- [ ] **Cal.com** — confirm the discovery-call booking link is live.
+- [ ] **Gmail** — enable 2FA, create an app password, add Gmail SMTP creds.
+
+**2. Airtable Leads table fields**
+
+`name`, `email`, `phone`, `intent` (buy/sell), `budget`, `preferred_area`,
+`timeline`, `score` (hot/warm/cold), `score_number` (0–100), `summary`,
+`reasons`, `suggested_action`, `followup_message`, `created_at`.
+
+**3. Workflow nodes**
+
+- [ ] **On form submission** (Webhook trigger) — production URL the form posts to.
+- [ ] **Edit Fields** — normalize the incoming payload.
+- [ ] **HTTP Request** — Claude, model `claude-haiku-4-5-20251001`, system
+      prompt from [`qualification-prompt.md`](./qualification-prompt.md),
+      `max_tokens` ~600.
+- [ ] **Code (parse score)** — paste [`n8n/parse-score.code-node.js`](./n8n/parse-score.code-node.js),
+      "Run Once for All Items".
+- [ ] **Create record** — map lead + score fields into Airtable.
+- [ ] **Switch** on `score`: hot → email **+ Cal.com link**; warm → nurture
+      email; cold → log only / low-touch.
+- [ ] **Send email** (Gmail) — `followup_message` as the body.
+
+**4. Test & go live**
+
+- [ ] Activate the workflow; confirm the webhook is live.
+- [ ] Send a test lead; verify a row lands in Airtable with score fields.
+- [ ] Verify a hot lead gets an email with the Cal.com link; warm/cold get the
+      right non-booking email.
+- [ ] Export the Leads table to `dashboard/leads.json` and confirm the dashboard
+      renders it.
+
+---
+
+## Repo structure
+
+```
+.
+├── dashboard/
+│   ├── index.html              # the single-file lead-intelligence dashboard
+│   ├── leads.json              # lead data the dashboard renders
+│   └── Leads-Grid view.csv     # sample Airtable export (data source)
+├── n8n/
+│   └── parse-score.code-node.js # parses Claude's JSON in the n8n Code node
+├── resources/
+│   ├── dashboard_preview.png
+│   ├── n8n_preview.png
+│   └── airtable_preview.png
+├── qualification-prompt.md     # the lead-scoring system prompt
+├── CLAUDE.md                   # architecture + conventions reference
+├── .env.example                # credential placeholders (real .env is git-ignored)
+└── README.md
+```
+
+---
+
+## Secrets
+
+Never commit secrets. `.env` (Airtable token, Gmail app password, Anthropic key,
+webhook URL) is git-ignored — copy [`.env.example`](./.env.example) to `.env`
+and fill it in. Canonical credentials live in **n8n's credential store**, not in
+this repo.
+
+---
+
+## Stack
+
+| Component | Choice | Role |
+| --------- | ------ | ---- |
+| Orchestration | **n8n** (UI-built) | The automation spine |
+| LLM scoring | **Claude API** `claude-haiku-4-5-20251001` | Lead qualification → JSON |
+| Data store | **Airtable** | Leads table |
+| Booking | **Cal.com** | 15-min discovery call |
+| Email | **Gmail SMTP** | Outbound follow-ups |
+| Dashboard | **Vanilla HTML/CSS/JS + Chart.js** | Lead-intelligence UI |
+| Hosting | **Netlify** | Live dashboard |
+
+---
+
+## Releases
+
+**[v1.0.0](https://github.com/AnassNadeem/lead-machine-realestate/releases/tag/v1.0.0)** — first complete end-to-end demo:
+n8n scoring + routing pipeline, Airtable persistence, and the live
+lead-intelligence dashboard.
+
+🔗 **Live demo:** https://lead-machine-demo.netlify.app/
