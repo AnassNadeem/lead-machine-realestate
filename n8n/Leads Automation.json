@@ -1,0 +1,710 @@
+{
+  "name": "Leads Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "formTitle": "Find Your Next Home",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Name"
+            },
+            {
+              "fieldLabel": "Email",
+              "fieldType": "email"
+            },
+            {
+              "fieldLabel": "Phone",
+              "fieldType": "number"
+            },
+            {
+              "fieldLabel": "Buying or Selling",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "Buying"
+                  },
+                  {
+                    "option": "Selling"
+                  }
+                ]
+              }
+            },
+            {
+              "fieldLabel": "Budget"
+            },
+            {
+              "fieldLabel": "Preferred Area"
+            },
+            {
+              "fieldLabel": "Timeline",
+              "fieldType": "dropdown",
+              "fieldOptions": {
+                "values": [
+                  {
+                    "option": "0-3 months"
+                  },
+                  {
+                    "option": "3-6 months"
+                  },
+                  {
+                    "option": "6+ months"
+                  },
+                  {
+                    "option": "Just browsing"
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.5,
+      "position": [
+        0,
+        0
+      ],
+      "id": "6320bb10-9a9d-4196-a787-3223cab5ef2b",
+      "name": "On form submission",
+      "webhookId": "0a18565c-016a-4e9e-836f-7e20d87f68ac"
+    },
+    {
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "4d7b5c84-ee10-4451-9328-6f0e98152569",
+              "name": "prompt ",
+              "value": "paste the full prompt text (from the chat message — plain text, no escaping)",
+              "type": "string"
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        208,
+        0
+      ],
+      "id": "da7ca5ac-5001-40b2-a8af-b49652a2387d",
+      "name": "Edit Fields"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://api.anthropic.com/v1/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "x-api-key",
+              "value": "YOUR_ANTHROPIC_API_KEY"
+            },
+            {
+              "name": "anthropic-version",
+              "value": "2023-06-01"
+            },
+            {
+              "name": "content-type",
+              "value": "application/json"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  model: \"claude-haiku-4-5-20251001\",\n  max_tokens: 1024,\n  system: \"You are a real-estate lead-qualification analyst. Return ONLY a single valid JSON object and nothing else. No prose, no markdown, no tables, no code fences. Keys: score (hot, warm, or cold), score_number (integer 0-100), summary (one sentence), reasons (array of 2-4 short strings), suggested_action (one sentence), followup_message (3-6 sentence email body, no subject, no signature, no URL). Scoring: hot = buying or selling within 3 months AND has a budget AND reachable (75-100). warm = 3-6 month horizon or exploring (40-74). cold = just browsing, no budget, 6+ months, or no timeline (0-39). Timeline matters most, then budget, then reachability.\",\n  messages: [\n    { role: \"user\", content: \"Score this lead. Return only the JSON object.\\n\\nLead data:\\n\" + JSON.stringify($('On form submission').first().json) }\n  ]\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "955d4019-c48a-49fb-bc54-dd1d46e2b95d",
+      "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "jsCode": "const res = $input.first().json;\nlet text = '';\ntry { text = res.content[0].text; } catch (e) { text = ''; }\n\nlet parsed;\ntry {\n  const match = text.match(/\\{[\\s\\S]*\\}/);   // grab the JSON object only\n  parsed = JSON.parse(match ? match[0] : text);\n} catch (e) {\n  parsed = { score:'warm', score_number:50, summary:'PARSE FAILED - check HTTP node',\n             reasons:'parse error', suggested_action:'Review manually', followup_message:'' };\n}\nif (Array.isArray(parsed.reasons)) parsed.reasons = parsed.reasons.join('; ');\nreturn [{ json: { ...$('On form submission').first().json, ...parsed } }];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        624,
+        0
+      ],
+      "id": "45780227-f6d6-494d-a0f2-64efd04fb721",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "operation": "create",
+        "base": {
+          "__rl": true,
+          "value": "appDuyEu3Cqd7R7gu",
+          "mode": "list",
+          "cachedResultName": "Lead Machine CRM",
+          "cachedResultUrl": "https://airtable.com/appDuyEu3Cqd7R7gu"
+        },
+        "table": {
+          "__rl": true,
+          "value": "tblin8GRLOOe4yGPr",
+          "mode": "list",
+          "cachedResultName": "Leads",
+          "cachedResultUrl": "https://airtable.com/appDuyEu3Cqd7R7gu/tblin8GRLOOe4yGPr"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "Score Number": "={{ $json.score_number }}",
+            "Name": "={{ $json.Name }}",
+            "Email": "={{ $json.Email }}",
+            "Buying or Selling": "={{ $json['Buying or Selling'] }}",
+            "Budget": "={{ $json.Budget }}",
+            "Preferred Area": "={{ $json['Preferred Area'] }}",
+            "Timeline ": "={{ $json.Timeline }}",
+            "Score ": "={{ $json.score }}",
+            "Summary": "={{ $json.summary }}",
+            "Suggested Action ": "={{ $json.suggested_action }}",
+            "Phone": "={{ String($json.Phone) }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "Name",
+              "displayName": "Name",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Email",
+              "displayName": "Email",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Phone",
+              "displayName": "Phone",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Buying or Selling",
+              "displayName": "Buying or Selling",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "Buying",
+                  "value": "Buying"
+                },
+                {
+                  "name": "Selling",
+                  "value": "Selling"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Budget",
+              "displayName": "Budget",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Preferred Area",
+              "displayName": "Preferred Area",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Timeline ",
+              "displayName": "Timeline ",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Score ",
+              "displayName": "Score ",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "options",
+              "options": [
+                {
+                  "name": "hot",
+                  "value": "hot"
+                },
+                {
+                  "name": "warm",
+                  "value": "warm"
+                },
+                {
+                  "name": "cold",
+                  "value": "cold"
+                }
+              ],
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Score Number",
+              "displayName": "Score Number",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "number",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Summary",
+              "displayName": "Summary",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            },
+            {
+              "id": "Suggested Action ",
+              "displayName": "Suggested Action ",
+              "required": false,
+              "defaultMatch": false,
+              "canBeUsedToMatch": true,
+              "display": true,
+              "type": "string",
+              "readOnly": false,
+              "removed": false
+            }
+          ],
+          "attemptToConvertTypes": false,
+          "convertFieldsToString": false
+        },
+        "options": {
+          "typecast": true
+        }
+      },
+      "type": "n8n-nodes-base.airtable",
+      "typeVersion": 2.2,
+      "position": [
+        832,
+        0
+      ],
+      "id": "90a3f041-99f5-46d2-a127-c481a1e0c9b7",
+      "name": "Create a record",
+      "credentials": {
+        "airtableTokenApi": {
+          "id": "98vjdvQduIV13FUj",
+          "name": "Airtable account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "leftValue": "={{ $json.fields['Score '] }}",
+                    "rightValue": "hot",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "id": "2a26e3d0-e3d1-41a9-bf86-975f6886d4d4"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "hot"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "042f9708-f316-4a93-a805-f44522b70aec",
+                    "leftValue": "={{ $json.fields['Score '] }}",
+                    "rightValue": "warm",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "warm"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 3
+                },
+                "conditions": [
+                  {
+                    "id": "c7bf79a5-da3d-4ca8-bc5b-e304247def93",
+                    "leftValue": "={{ $json.fields['Score '] }}",
+                    "rightValue": "cold",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals",
+                      "name": "filter.operator.equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "cold"
+            }
+          ]
+        },
+        "looseTypeValidation": true,
+        "options": {}
+      },
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.4,
+      "position": [
+        1024,
+        -16
+      ],
+      "id": "b2432960-50b7-451c-9f9c-42da6740ca51",
+      "name": "Switch"
+    },
+    {
+      "parameters": {
+        "fromEmail": "anass.nadeem42@gmail.com",
+        "toEmail": "={{ $('On form submission').item.json.Email }}",
+        "subject": "Quick 15-minute call about your home search?",
+        "emailFormat": "text",
+        "text": "==Hi {{ $('Code in JavaScript').item.json.Name }},\n\n{{ $('Code in JavaScript').item.json.followup_message }}\n\nGrab a time that works for you here: https://cal.com/muhammad-anas-nadeem-iwq2hx/15-min-discovery-call\n\nTalk soon,\nAnas",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1328,
+        -208
+      ],
+      "id": "4fd8364b-339e-4d39-8f4c-2e9db3ceed5c",
+      "name": "Send an Email",
+      "webhookId": "cccdaf4a-c289-4e69-a06e-941796d50e7c",
+      "credentials": {
+        "smtp": {
+          "id": "95Sql0NoaJAx8DPa",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "anass.nadeem42@gmail.com",
+        "toEmail": "anass.nadeem42@gmail.com",
+        "subject": "==🔥 New HOT lead: {{ $('Code in JavaScript').item.json.Name }}",
+        "emailFormat": "text",
+        "text": "==New hot lead just came in:\n\nName: {{ $('Code in JavaScript').item.json.Name }}\nEmail: {{ $('Code in JavaScript').item.json.Email }}\nPhone: {{ $('Code in JavaScript').item.json.Phone }}\nSummary: {{ $('Code in JavaScript').item.json.summary }}\nSuggested action: {{ $('Code in JavaScript').item.json.suggested_action }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1536,
+        -208
+      ],
+      "id": "50bf36c6-18b3-4441-984d-04cd2103604f",
+      "name": "Send an Email1",
+      "webhookId": "1f9b32eb-a8b1-4de0-b0ff-3c81d4b24b89",
+      "credentials": {
+        "smtp": {
+          "id": "95Sql0NoaJAx8DPa",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "anass.nadeem42@gmail.com",
+        "toEmail": "={{ $('On form submission').item.json.Email }}",
+        "subject": "Helpful info for your home search",
+        "emailFormat": "text",
+        "text": "==Hi {{ $('Code in JavaScript').item.json.Name }},\n\n{{ $('Code in JavaScript').item.json.followup_message }}\n\nBest,\nAnas",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1328,
+        0
+      ],
+      "id": "455c0afd-0b19-42eb-a8b9-3c711c23e40f",
+      "name": "Send an Email2",
+      "webhookId": "3cad3da7-1070-46df-8d7b-bc5d6e6a3d94",
+      "credentials": {
+        "smtp": {
+          "id": "95Sql0NoaJAx8DPa",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "amount": 1,
+        "unit": "minutes"
+      },
+      "type": "n8n-nodes-base.wait",
+      "typeVersion": 1.1,
+      "position": [
+        1536,
+        0
+      ],
+      "id": "a542eaec-d93a-4d1d-a4fe-5216a4f8be87",
+      "name": "Wait",
+      "webhookId": "ae6b5540-c640-42d1-aee3-3ec941a5f85a"
+    },
+    {
+      "parameters": {
+        "fromEmail": "anass.nadeem42@gmail.com",
+        "toEmail": "={{ $('On form submission').item.json.Email }}",
+        "subject": "Still happy to help whenever you're ready",
+        "emailFormat": "text",
+        "text": "==Hi {{ $('Code in JavaScript').item.json.Name }},\n\nJust checking in — happy to answer any questions or send over a few listings that match what you're looking for. No rush at all.\n\nBest,\nAnas",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1760,
+        0
+      ],
+      "id": "9f434eb4-356b-478c-ac97-13b21ee48319",
+      "name": "Send an Email3",
+      "webhookId": "1dc940a8-625a-4615-ba87-9b04d2a9c1c0",
+      "credentials": {
+        "smtp": {
+          "id": "95Sql0NoaJAx8DPa",
+          "name": "SMTP account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "fromEmail": "anass.nadeem42@gmail.com",
+        "toEmail": "={{ $('On form submission').item.json.Email }}",
+        "subject": "Thanks for reaching out",
+        "emailFormat": "text",
+        "text": "==Hi {{ $('Code in JavaScript').item.json.Name }},\n\nThanks for getting in touch! Whenever you're ready to explore options, I'm here — I'll share the occasional useful update in the meantime.\n\nBest,\nAnas",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        1328,
+        224
+      ],
+      "id": "4fdd4314-7628-4f2e-b93d-24775d233a5a",
+      "name": "Send an Email4",
+      "webhookId": "c766ee01-e5bb-4989-9111-f198df05b2ad",
+      "credentials": {
+        "smtp": {
+          "id": "95Sql0NoaJAx8DPa",
+          "name": "SMTP account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "On form submission": {
+      "main": [
+        [
+          {
+            "node": "Edit Fields",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Edit Fields": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "HTTP Request": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Create a record",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Create a record": {
+      "main": [
+        [
+          {
+            "node": "Switch",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Switch": {
+      "main": [
+        [
+          {
+            "node": "Send an Email",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send an Email2",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Send an Email4",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send an Email": {
+      "main": [
+        [
+          {
+            "node": "Send an Email1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send an Email2": {
+      "main": [
+        [
+          {
+            "node": "Wait",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Wait": {
+      "main": [
+        [
+          {
+            "node": "Send an Email3",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "57fc8ebf-8cee-4f84-92c7-8479ef9bca19",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "950891e48a281e5edfaa56f84424598b040f5ef1344781017ebe1e55a09aa2ef"
+  },
+  "nodeGroups": [],
+  "id": "h2cj7L9owE5IPTrI",
+  "tags": []
+}
