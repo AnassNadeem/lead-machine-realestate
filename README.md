@@ -20,9 +20,10 @@ dashboard**.
 | Piece | What it does | Where |
 | ----- | ------------ | ----- |
 | **Lead-intelligence dashboard** | Dark, data-dense single-file UI: KPI cards, distribution donut, timeline chart, sortable/filterable leads table, slide-over lead detail with copyable AI follow-up | [`dashboard/`](./dashboard) |
-| **n8n workflow** | The automation spine — form trigger → Claude scoring → Airtable → Switch → email. Built by hand in the n8n UI | preview below |
+| **n8n workflow** | The automation spine — form trigger → Claude scoring → Airtable → Switch → email. Built in the n8n UI and exported (12 nodes, importable) | [`n8n/Leads Automation.json`](./n8n/Leads%20Automation.json) |
 | **Qualification prompt** | The system prompt Claude uses to score a lead and return strict JSON | [`qualification-prompt.md`](./qualification-prompt.md) |
 | **Parse-score Code node** | n8n JavaScript that strips fences, parses Claude's JSON, and degrades gracefully on bad output | [`n8n/parse-score.code-node.js`](./n8n/parse-score.code-node.js) |
+| **Parse-score tests** | Node test suite that runs the Code node against mocked Claude responses | [`n8n/parse-score.test.mjs`](./n8n/parse-score.test.mjs) |
 
 ---
 
@@ -159,9 +160,16 @@ The Claude node returns **only** this object — no prose, no markdown fences
 
 ## The n8n workflow
 
-Built by hand in the n8n UI (this repo holds only the code-shaped parts n8n
-consumes). The flow: **On form submission → Edit Fields → HTTP Request (Claude)
-→ Code (parse score) → Create record (Airtable) → Switch → Send email(s)**.
+Built in the n8n UI. The flow: **On form submission → Edit Fields → HTTP Request
+(Claude) → Code (parse score) → Create record (Airtable) → Switch → Send
+email(s)**.
+
+The full 12-node workflow is exported to
+[`n8n/Leads Automation.json`](./n8n/Leads%20Automation.json) — import it via
+**n8n → Workflows → Import from File** to recreate the pipeline. The Anthropic
+API key in the export is redacted to the placeholder `YOUR_ANTHROPIC_API_KEY`;
+set the real key (and the Airtable / Gmail / Cal.com credentials) in n8n's
+credential store after importing.
 
 ![n8n workflow](resources/n8n_preview.png)
 
@@ -210,6 +218,20 @@ Scored leads land in the Airtable **Leads** table:
 
 ---
 
+## Tests
+
+The parse-score Code node has a Node test suite that runs the **actual node
+source** against mocked Claude responses (clean JSON, fenced JSON, prose-wrapped
+JSON, non-JSON / empty output, unknown scores, and missing fields):
+
+```bash
+node --test "n8n/**/*.test.mjs"
+```
+
+All 7 tests pass; no dependencies, no build step.
+
+---
+
 ## Repo structure
 
 ```
@@ -219,7 +241,9 @@ Scored leads land in the Airtable **Leads** table:
 │   ├── leads.json              # lead data the dashboard renders
 │   └── Leads-Grid view.csv     # sample Airtable export (data source)
 ├── n8n/
-│   └── parse-score.code-node.js # parses Claude's JSON in the n8n Code node
+│   ├── Leads Automation.json     # exported n8n workflow (importable; key redacted)
+│   ├── parse-score.code-node.js  # parses Claude's JSON in the n8n Code node
+│   └── parse-score.test.mjs      # tests for the parse-score node
 ├── resources/
 │   ├── dashboard_preview.png
 │   ├── n8n_preview.png
